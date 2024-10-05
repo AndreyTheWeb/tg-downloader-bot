@@ -1,11 +1,10 @@
-package handler
+package main
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"regexp"
+	"time"
 
 	"tg-bot-insta-downloader/utils"
 
@@ -14,7 +13,6 @@ import (
 )
 
 var (
-	bot            *telebot.Bot
 	instagramRegex = regexp.MustCompile(`^(https:\/\/(\w+\.)?instagram.com\/)`)
 )
 
@@ -23,7 +21,9 @@ func init() {
 	if err != nil {
 		log.Println("No .env file found")
 	}
+}
 
+func main() {
 	botToken := os.Getenv("TELEGRAM_TOKEN")
 	if botToken == "" {
 		log.Fatal("TELEGRAM_TOKEN is required")
@@ -34,17 +34,9 @@ func init() {
 		log.Fatal("RAPID_API_KEY is required")
 	}
 
-	webhookURL := os.Getenv("WEBHOOK_URL")
-	if webhookURL == "" {
-		log.Fatal("WEBHOOK_URL is required")
-	}
-
-	bot, err = telebot.NewBot(telebot.Settings{
-		Token: botToken,
-		Poller: &telebot.Webhook{
-			Listen:   ":3000",
-			Endpoint: &telebot.WebhookEndpoint{PublicURL: webhookURL},
-		},
+	bot, err := telebot.NewBot(telebot.Settings{
+		Token:  botToken,
+		Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -57,19 +49,19 @@ func init() {
 	bot.Handle(telebot.OnText, func(c telebot.Context) error {
 		message := c.Message().Text
 		if instagramRegex.MatchString(message) {
+			if err != nil {
+				return err
+			}
+
 			url, err := utils.FetchInstagramVideo(message, rapidApiKey)
 			if err != nil {
 				return err
 			}
-			return c.Send(&telebot.Video{File: telebot.FromURL(url)})
+
+			c.Send(&telebot.Video{File: telebot.FromURL(url)})
 		}
 		return nil
 	})
-}
 
-// Handler function for Vercel
-func Handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Bot is running")
-	update := &telebot.Update{}
-	bot.ProcessUpdate(*update)
+	bot.Start()
 }
